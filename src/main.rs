@@ -4,6 +4,8 @@ mod constants;
 mod sphere;
 mod hittable;
 mod hittable_list;
+mod utils;
+mod camera;
 
 use std::env;
 use std::process::Command;
@@ -13,6 +15,8 @@ use ray::Ray;
 use sphere::Sphere;
 use hittable::{Hittable, HitRecord};
 use hittable_list::HittableList;
+use camera::Camera;
+
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -30,11 +34,9 @@ fn make_image()->String{
     let width:u32 = constants::WIDTH as u32;
     let height:u32 = constants::HEIGHT as u32;
 
-    let origin = Vec3::new(0.0, 0.0, 0.0);
-    let horizontal = Vec3::new(constants::VP_WIDTH, 0.0, 0.0);
-    let vertical = Vec3::new(0.0, constants::VP_HEIGHT, 0.0);
     let focal = Vec3::new(0.0, 0.0, constants::FOCAL_LENGTH);
-    let llc = origin - horizontal/2.0 - vertical/2.0 - focal;
+
+    let camera = Camera::camera();
 
     let mut world = HittableList::new();
     let sphere = Sphere::new(-focal, 0.5);
@@ -45,35 +47,55 @@ fn make_image()->String{
     image.push_str(&format!("P3\n{} {}\n255\n",width, height));
     for y in (0..height).rev(){
         for x in 0..width{
-            let u:f32 = x as f32 / width as f32;
-            let v:f32 = y as f32 / height as f32;
+            // let mut pixel_color = Vec3::new(0.0, 0.0, 0.0);
+            // for _ in 0..constants::SAMPLES_PER_PIXEL as usize {
+            //     let u:f32 = (x as f32 + utils::random_number_ranged(0.0, 1.0)) / width as f32;
+            //     let v:f32 = (y as f32 + utils::random_number_ranged(0.0, 1.0)) / height as f32;
+                
+            // }
+            let u:f32 = (x as f32) / width as f32;
+            let v:f32 = (y as f32) / height as f32;
 
-            let ray: Ray = Ray::new(origin, llc + horizontal*u + vertical*v - origin);
-            let color = ray_color(&ray, &world);
+            let ray: Ray = camera.get_ray(u, v);
 
-            let r_pixel_val = (255f32 * color[0]) as u32;
-            let g_pixel_val = (255f32 * color[1]) as u32;
-            let b_pixel_val = (255f32 * color[2]) as u32;
+            let pixel_color = ray_color(&ray, &world, constants::MAX_DEPTH);
 
-            image.push_str(&format!("{} {} {}\n", r_pixel_val, g_pixel_val, b_pixel_val));
+            write_color(&mut image, &pixel_color);
         }
     }
     image
 }
 
-fn ray_color(ray: &Ray, world: &HittableList) -> Vec3 {
+fn ray_color(ray: &Ray, world: &HittableList, depth: u32) -> Vec3 {
     let white = Vec3::new(1.0, 1.0, 1.0);
+    let black = Vec3::new(0.0, 0.0, 0.0);
     let blue = Vec3::new(0.0, 0.0, 1.0);
     let mut rec: HitRecord = HitRecord::default(); 
+
+    if depth <=0 {
+        return black
+    }
     
-    if world.hit(ray, 0.0, f32::INFINITY, &mut rec){
-        return (rec.normal + white) * 0.5
+    if world.hit(ray, 0.01, constants::INFINITY, &mut rec){
+        // return (rec.normal + white) * 0.5
+        let target = rec.point() + Vec3::random_in_hemisphere(&rec.normal()) ;
+        let dif_ray = Ray::new(rec.point(), target-rec.point());
+        return ray_color(&dif_ray, world, depth - 1 ) * 0.5
+        // return (rec.normal + white) * 0.5
     }else{
         let unit_direction = Vec3::unit_vector(ray.direction());
         let t = 0.5*(unit_direction.y() + 1.0);
         white*(1.0-t) + blue*t
     }
 
+}
+
+fn write_color(image: &mut String, color: &Vec3){
+    let r_pixel_val = (255f32 * color.x()) as u32;
+    let g_pixel_val = (255f32 * color.y()) as u32;
+    let b_pixel_val = (255f32 * color.z()) as u32;
+
+    image.push_str(&format!("{} {} {}\n", r_pixel_val, g_pixel_val, b_pixel_val));
 }
 
 fn show_image(filename: &String){
